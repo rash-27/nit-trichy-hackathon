@@ -209,11 +209,16 @@ function BusRoutePage() {
       return { full: [], upcoming: [] };
     }
     // We get the next logical stop
+    console.log("checkpoint-1")
     const nextName = payload.upcoming_etas[0].stop_name;
     if (!nextName) return { full: [], upcoming: [] };
 
-    const targetStop = STOPS.find((s) => s.name === nextName);
+    console.log("checkpoint-2", nextName)
+
+    const targetStop = STOPS.find((s) => s.name.toLowerCase().replace(" ", "").replace("-", "") === nextName.toLowerCase().replace(" ", "").replace("-", ""));
     if (!targetStop) return { full: [], upcoming: [] };
+
+    console.log("checkpoint-3", targetStop)
 
     // 1. Find nearest index on ROUTE_PATH to the bus
     let bestBusIdx = 0;
