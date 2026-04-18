@@ -23,6 +23,10 @@ async def startup_event():
     start_mqtt_client(loop)
     print("Transport Tracking Server Started")
 
+@app.get("/api/buses")
+async def get_buses():
+    return [{"name": "bus-1", "isRunning": app_state.state.isBusRunning}]
+
 @app.websocket("/ws/bus_location")
 async def websocket_endpoint(websocket: WebSocket):
     await ws_manager.connect(websocket)
