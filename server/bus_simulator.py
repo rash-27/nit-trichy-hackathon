@@ -73,7 +73,7 @@ import sys
 import threading
 import time
 from datetime import datetime
-
+import math
 import paho.mqtt.client as mqtt
 
 import os
@@ -96,14 +96,17 @@ NORMAL_INTERVAL = 2       # seconds between GPS pings in every state
 ROW_SPACING_M   = 10      # metres between consecutive CSV rows (fixed)
 
 # ── Speed physics — per day-of-week profiles ─────────────────────────────────
+# The route is ~8.23 km. 
+# To finish in ~1 hr (fastest): average speed needs to be ~8.2 km/h
+# To finish in ~2 hr (slowest): average speed needs to be ~4.1 km/h
 DAY_PROFILES = {
-    0: {"day": "Monday",    "speed_min": 2.5, "speed_max": 4.5, "accel": 0.25, "decel": 0.60},
-    1: {"day": "Tuesday",   "speed_min": 3.0, "speed_max": 5.0, "accel": 0.30, "decel": 0.55},
-    2: {"day": "Wednesday", "speed_min": 3.0, "speed_max": 5.0, "accel": 0.30, "decel": 0.50},
-    3: {"day": "Thursday",  "speed_min": 3.0, "speed_max": 5.0, "accel": 0.30, "decel": 0.55},
-    4: {"day": "Friday",    "speed_min": 2.0, "speed_max": 4.0, "accel": 0.20, "decel": 0.70},
-    5: {"day": "Saturday",  "speed_min": 4.0, "speed_max": 6.0, "accel": 0.40, "decel": 0.45},
-    6: {"day": "Sunday",    "speed_min": 4.5, "speed_max": 6.5, "accel": 0.50, "decel": 0.40},
+    0: {"day": "Monday",    "speed_min": 4.5, "speed_max": 5.5, "accel": 0.25, "decel": 0.60},
+    1: {"day": "Tuesday",   "speed_min": 4.8, "speed_max": 5.8, "accel": 0.30, "decel": 0.55},
+    2: {"day": "Wednesday", "speed_min": 4.8, "speed_max": 5.8, "accel": 0.30, "decel": 0.50},
+    3: {"day": "Thursday",  "speed_min": 4.8, "speed_max": 5.8, "accel": 0.30, "decel": 0.55},
+    4: {"day": "Friday",    "speed_min": 4.2, "speed_max": 5.2, "accel": 0.20, "decel": 0.70},
+    5: {"day": "Saturday",  "speed_min": 6.0, "speed_max": 7.5, "accel": 0.40, "decel": 0.45},
+    6: {"day": "Sunday",    "speed_min": 7.0, "speed_max": 8.2, "accel": 0.50, "decel": 0.40},
 }
 
 # ── Stop behaviour ────────────────────────────────────────────────────────────
@@ -113,7 +116,7 @@ STOP_COORDINATES = [
     {"name": "Hyderabad Gate",      "lat": 25.262927, "lng": 82.981793},
     {"name": "Rajeev Nagar Colony", "lat": 25.275039, "lng": 82.984572},
 ]
-STOP_DURATION    = 300     # seconds to wait at each intermediate stop (5 min)
+STOP_DURATION    = 30    # seconds to wait at each intermediate stop (5 min)
 STOP_APPROACH_M  = 50      # metres ahead of a stop to start braking
 PROXIMITY_M      = 15      # metres — "at stop" threshold
 
@@ -211,7 +214,8 @@ class Bus:
         self.rows       = rows
         self.client     = client
 
-        self.row_idx    = 0
+        self.row_idx       = 0
+        self.distance_m    = 0.0
         self.dist_rem      = 0.0   # sub-row remainder accumulator (metres)
 
         # Physics — start at minimum speed
@@ -244,10 +248,14 @@ class Bus:
         return math.sqrt(dlat**2 + dlng**2)
 
     def _nearest_stop(self) -> tuple:
-        """Return (distance_m, stop_dict) for the closest stop."""
+        """Return (distance_m, stop_dict) for the closest upcoming stop."""
         curr = self.rows[self.row_idx % len(self.rows)]
         best_d, best_s = float("inf"), None
         for stop in STOP_COORDINATES:
+            # Don't try to brake for the stop we just departed!
+            if stop["name"] == self.last_stop_name:
+                continue
+                
             d = self._dist_m(curr["lat"], curr["lng"], stop["lat"], stop["lng"])
             if d < best_d:
                 best_d, best_s = d, stop
@@ -270,7 +278,7 @@ class Bus:
 
         if dist_to_stop <= STOP_APPROACH_M:
             ratio  = max(0.0, (dist_to_stop - PROXIMITY_M) / (STOP_APPROACH_M - PROXIMITY_M))
-            target = cruise_ms * ratio
+            target = max(1.0, cruise_ms * ratio) # Minimum 1.0 m/s to prevent infinite Zeno's paradox braking
         else:
             target = cruise_ms + random.uniform(-0.05, 0.05) * (cruise_ms - min_ms)
             target = max(min_ms, min(cruise_ms, target))
@@ -280,6 +288,8 @@ class Bus:
         else:
             self.speed_ms = max(0.0, max(target, self.speed_ms - decel * dt))
         
+        # Ensure the bus is always moving at least a tiny bit if not explicitly stopped
+        self.speed_ms = max(0.5, self.speed_ms)
         self.speed_kmh = self.speed_ms * 3.6
 
     def _advance(self) -> bool:
