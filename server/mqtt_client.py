@@ -124,19 +124,23 @@ def start_mqtt_client(loop):
         logger.info(f"Received message on topic {msg.topic}")
         try:
             data = json.loads(msg.payload.decode())
-            msg_type = data.get("type", "live")
             broadcast_msg = None
             
-            if msg_type == "live":
-                broadcast_msg = process_payload(data)
-            elif msg_type == "batch":
-                batch_data = data.get("data", [])
-                if batch_data:
-                    broadcast_msg = process_payload(batch_data[-1])
-            elif msg_type == "recovery":
-                current_payload = data.get("current")
-                if current_payload:
-                    broadcast_msg = process_payload(current_payload)
+            if isinstance(data, list):
+                if data:
+                    broadcast_msg = process_payload(data[-1])
+            else:
+                msg_type = data.get("type", "live")
+                if msg_type == "live":
+                    broadcast_msg = process_payload(data)
+                elif msg_type == "batch":
+                    batch_data = data.get("data", [])
+                    if batch_data:
+                        broadcast_msg = process_payload(batch_data[-1])
+                elif msg_type == "recovery":
+                    current_payload = data.get("current")
+                    if current_payload:
+                        broadcast_msg = process_payload(current_payload)
             
             if broadcast_msg:
                 asyncio.run_coroutine_threadsafe(safe_broadcast(broadcast_msg), loop)
