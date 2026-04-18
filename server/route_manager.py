@@ -1,74 +1,119 @@
 import math
+import os
+import csv
 
 STOPS = [
     {"name": "Lanka Gate", "lat": 25.277768, "lng": 83.002231},
     {"name": "Stop -1", "lat": 25.263755, "lng": 82.997520},
     {"name": "Hyderabad Gate", "lat": 25.262927, "lng": 82.981793},
     {"name": "Rajeev Nagar Colony", "lat": 25.275039, "lng": 82.984572},
-    {"name": "Lanka Gate Return", "lat": 25.277768, "lng": 83.002231}
 ]
 
-def haversine(lat1, lon1, lat2, lon2):
-    """
-    Calculate the great circle distance in kilometers between two points 
-    on the earth (specified in decimal degrees)
-    """
-    R = 6371.0 # Radius of earth in kilometers
-    dLat = math.radians(lat2 - lat1)
-    dLon = math.radians(lon2 - lon1)
-    a = math.sin(dLat/2) * math.sin(dLat/2) + \
-        math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * \
-        math.sin(dLon/2) * math.sin(dLon/2)
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    return R * c
+ROW_SPACING_M = 10
+
+def flat_dist(lat1, lng1, lat2, lng2) -> float:
+    """Distance in metres using flat-earth approx."""
+    dlat = (lat2 - lat1) * 111320
+    dlng = (lng2 - lng1) * 111320 * math.cos(math.radians((lat1 + lat2) / 2))
+    return math.sqrt(dlat * dlat + dlng * dlng)
 
 class RouteManager:
     def __init__(self):
         self.stops = STOPS
+        self.csv_path = os.path.join(os.path.dirname(__file__), "..", "location.csv")
+        self.rows = []
+        self._load_csv()
+        
+        # Precompute segment boundaries based on nearest row
+        self.stop_indices = []
+        for stop in self.stops:
+            best_i, best_d = 0, float("inf")
+            for i, (rlat, rlng) in enumerate(self.rows):
+                d = flat_dist(rlat, rlng, stop["lat"], stop["lng"])
+                if d < best_d:
+                    best_i, best_d = i, d
+            self.stop_indices.append(best_i)
+            
         self.segments = []
-        for i in range(len(self.stops) - 1):
-            segment_dist = haversine(
-                self.stops[i]['lat'], self.stops[i]['lng'],
-                self.stops[i+1]['lat'], self.stops[i+1]['lng']
-            )
+        n_stops = len(self.stops)
+        for i in range(n_stops):
+            start_idx = self.stop_indices[i]
+            end_idx = self.stop_indices[(i + 1) % n_stops]
+            name = f"Segment-{i}"
+            
+            if end_idx > start_idx:
+                n_rows = end_idx - start_idx
+            else:
+                n_rows = (len(self.rows) - start_idx) + end_idx
+                
+            distance_km = (n_rows * ROW_SPACING_M) / 1000.0
+            
             self.segments.append({
                 "segment_id": i,
-                "start": self.stops[i],
-                "end": self.stops[i+1],
-                "total_distance_km": segment_dist
+                "name": name,
+                "start_idx": int(start_idx),
+                "end_idx": int(end_idx),
+                "total_distance_km": float(distance_km),
+                "end_stop_name": self.stops[(i+1)%n_stops]["name"]
             })
 
+    def _load_csv(self):
+        if not os.path.exists(self.csv_path):
+            self.csv_path = os.path.join(os.path.dirname(__file__), "..", "..", "campus_route.csv")
+            if not os.path.exists(self.csv_path):
+                self.csv_path = "location.csv"
+        try:
+            with open(self.csv_path, newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                fields = [h.strip().lower() for h in reader.fieldnames] if reader.fieldnames else []
+                lat_col = "latitude" if "latitude" in fields else "lat"
+                lng_col = "longitude" if "longitude" in fields else "lng"
+                
+                for row in reader:
+                    self.rows.append((float(row[lat_col]), float(row[lng_col])))
+        except Exception as e:
+            print(f"Error loading route CSV: {e}")
+
     def get_current_segment_and_progress(self, current_lat, current_lng):
-        """
-        Naive approach: Find the segment where the distance between start->current + current->end 
-        is closest to start->end. Or simply find the closest segment start, but since it's a loop,
-        we can just check the closest line segment.
-        For simplicity in this mock, we just find the closest segment sequentially that has not been fully traversed,
-        or just the one where current point is located.
-        Better approach: just find the distance of current_point to all line segments and pick min.
-        """
-        min_diff = float('inf')
-        current_segment_idx = 0
-        dist_covered_km = 0
-
-        for idx, seg in enumerate(self.segments):
-            d1 = haversine(seg['start']['lat'], seg['start']['lng'], current_lat, current_lng)
-            d2 = haversine(current_lat, current_lng, seg['end']['lat'], seg['end']['lng'])
-            diff = abs((d1 + d2) - seg['total_distance_km'])
+        if not self.rows:
+            return 0, 0.0
             
-            if diff < min_diff:
-                min_diff = diff
-                current_segment_idx = idx
-                dist_covered_km = d1
-
-        return current_segment_idx, dist_covered_km
+        # Find exact or nearest row for current coord
+        best_i, best_d = 0, float("inf")
+        for i, (rlat, rlng) in enumerate(self.rows):
+            d = flat_dist(rlat, rlng, current_lat, current_lng)
+            if d < best_d:
+                best_i, best_d = i, d
+                
+        # Find which segment best_i belongs to
+        n_stops = len(self.stop_indices)
+        for i in range(n_stops):
+            start_idx = int(self.stop_indices[i])
+            end_idx = int(self.stop_indices[(i + 1) % n_stops])
+            
+            is_in_segment = False
+            if start_idx < end_idx:
+                is_in_segment = start_idx <= best_i < end_idx
+            else:
+                is_in_segment = best_i >= start_idx or best_i < end_idx
+                
+            if is_in_segment:
+                if best_i >= start_idx:
+                    dist_rows = best_i - start_idx
+                else:
+                    dist_rows = (len(self.rows) - start_idx) + best_i
+                    
+                dist_covered_km = (float(dist_rows) * ROW_SPACING_M) / 1000.0
+                return i, dist_covered_km
+                
+        return 0, 0.0
 
     def get_upcoming_stops(self, current_segment_idx):
         upcoming = []
         for i in range(current_segment_idx, len(self.segments)):
             upcoming.append({
                 "segment_idx": i,
-                "stop_name": self.segments[i]['end']['name']
+                "stop_name": self.segments[i].get('end_stop_name', 'Unknown')
             })
         return upcoming
 

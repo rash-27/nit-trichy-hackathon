@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -9,11 +9,11 @@ class BusState(BaseModel):
     speed: Optional[float] = None
     isAtStop: bool = False
     timeTillBusWaitsAtStop: Optional[int] = None # in seconds or unix timestamp based on usage
+    upcoming_etas: List[Dict[str, Any]] = []
 
 class StateManager:
     def __init__(self):
         self.state = BusState()
-        self.etas_to_stops = []
 
     def update_location(self, lat: float, lng: float, speed: float):
         self.state.isBusRunning = True
@@ -29,8 +29,7 @@ class StateManager:
 
     def get_state_dict(self):
         return {
-            "bus_state": self.state.model_dump(),
-            "etas_to_stops": self.etas_to_stops
+            "bus_state": self.state.model_dump()
         }
 
 # Global singleton

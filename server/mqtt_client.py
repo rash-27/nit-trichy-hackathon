@@ -40,7 +40,7 @@ def process_payload(payload):
         etas = ml_estimator.get_etas(seg_idx, dist_covered, route_manager)
         
         # Save ETAs to state for new connections
-        app_state.etas_to_stops = etas
+        app_state.state.upcoming_etas = etas
 
         # Create broadcast dict
         return app_state.get_state_dict()
