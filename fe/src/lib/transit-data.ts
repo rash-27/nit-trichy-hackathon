@@ -33,7 +33,7 @@ export type BusPayload = {
   speed: number;
   isAtStop: number; // index of stop or -1
   timeTillBusWaitsAtStop: number; // seconds remaining at stop
-  upcoming_etas: Record<string, number>; // stop name -> seconds
+  upcoming_etas: Array<{ stop_name: string, eta_seconds: number }>; // stop name -> seconds
 };
 
 export function getBus(number: string): Bus | undefined {

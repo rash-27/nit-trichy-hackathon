@@ -11,6 +11,18 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+// Definitively fix "Map container is already initialized" for React 18 Strict Mode and HMR.
+// By intercepting L.Map initialization, we can transparently clear the stale _leaflet_id
+// left behind by React's aggressive DOM reuse before Leaflet checks for it.
+const originalInit = (L.Map.prototype as any).initialize;
+(L.Map.prototype as any).initialize = function (this: any, ...args: any[]) {
+  const container = args[0];
+  if (container && typeof container !== "string" && container._leaflet_id) {
+    container._leaflet_id = null;
+  }
+  originalInit.apply(this, args);
+};
+
 const busIcon = L.divIcon({
   className: "",
   iconSize: [44, 44],
@@ -53,6 +65,9 @@ export type BusMapProps = {
 
 export function BusMap({ position, activeStopIndex, upcomingPolyline }: BusMapProps) {
   const [center] = useState<[number, number]>([25.27, 82.99]);
+
+  // The map instances are now safely managed globally via the prototype trap above,
+  // preventing strict mode crashing without needing to hack DOM Refs here.
 
   const routePolyline = useMemo<[number, number][]>(
     () => STOPS.map((s) => [s.lat, s.lng] as [number, number]).concat([[STOPS[0].lat, STOPS[0].lng]]),

@@ -11,10 +11,25 @@ export const Route = createFileRoute("/")({
       { property: "og:description", content: "Track buses live across the city in real time." },
     ],
   }),
+  loader: async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/buses");
+      if (res.ok) {
+        const data = await res.json();
+        return { buses: data };
+      }
+    } catch (err) {
+      console.error("Failed to fetch buses API", err);
+    }
+    // Fallback to local hardcoded mock data if server fails
+    return { buses: BUSES };
+  },
   component: Index,
 });
 
 function Index() {
+  const { buses } = Route.useLoaderData();
+  
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-gradient-card backdrop-blur sticky top-0 z-10">
@@ -34,11 +49,11 @@ function Index() {
       <main className="mx-auto max-w-3xl px-5 py-6">
         <div className="mb-5 flex items-baseline justify-between">
           <h2 className="text-2xl font-bold">Available buses</h2>
-          <span className="text-xs text-muted-foreground">{BUSES.length} routes</span>
+          <span className="text-xs text-muted-foreground">{buses.length} routes</span>
         </div>
 
         <ul className="space-y-3">
-          {BUSES.map((bus) => (
+          {buses.map((bus: any) => (
             <li key={bus.number}>
               <Link
                 to="/route/$busNumber"
@@ -63,7 +78,7 @@ function Index() {
                     )}
                   </div>
                   <h3 className="mt-1 truncate font-semibold">{bus.name}</h3>
-                  <p className="truncate text-xs text-muted-foreground">{bus.route}</p>
+                  <p className="truncate text-xs text-muted-foreground">{bus.route || "Live Tracker Endpoint"}</p>
                 </div>
                 <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />
               </Link>

@@ -10,12 +10,12 @@ function formatEta(seconds: number) {
 export type EtaSheetProps = {
   nextStopName: string | null;
   nextStopEta: number | null;
-  upcoming: Array<{ name: string; etaSeconds: number }>;
+  upcoming: Array<{ stop_name: string; eta_seconds: number }>;
 };
 
 export function EtaSheet({ nextStopName, nextStopEta, upcoming }: EtaSheetProps) {
   const [expanded, setExpanded] = useState(false);
-
+  // console.log("Upcooming, ", upcoming)
   // Lock body scroll when expanded
   useEffect(() => {
     if (expanded) {
@@ -39,9 +39,8 @@ export function EtaSheet({ nextStopName, nextStopEta, upcoming }: EtaSheetProps)
 
       {/* Bottom sheet */}
       <div
-        className={`fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border-t border-border bg-gradient-card shadow-sheet transition-transform duration-300 ${
-          expanded ? "translate-y-0" : "translate-y-0"
-        }`}
+        className={`fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border-t border-border bg-gradient-card shadow-sheet transition-transform duration-300 ${expanded ? "translate-y-0" : "translate-y-0"
+          }`}
       >
         <button
           onClick={() => setExpanded((v) => !v)}
@@ -87,18 +86,18 @@ export function EtaSheet({ nextStopName, nextStopEta, upcoming }: EtaSheetProps)
               <ul className="space-y-2">
                 {upcoming.map((s, i) => (
                   <li
-                    key={`${s.name}-${i}`}
+                    key={`${s.stop_name}-${i}`}
                     className="flex items-center justify-between gap-3 rounded-xl border border-border bg-secondary/40 p-3"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-background">
                         <span className="text-xs font-bold text-primary">{i + 1}</span>
                       </div>
-                      <span className="truncate font-medium">{s.name}</span>
+                      <span className="truncate font-medium">{s.stop_name}</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" />
-                      <span className="font-mono">{formatEta(s.etaSeconds)}</span>
+                      <span className="font-mono">{formatEta(s.eta_seconds)}</span>
                     </div>
                   </li>
                 ))}

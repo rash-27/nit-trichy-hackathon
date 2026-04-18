@@ -6,10 +6,24 @@ import { STOPS, getBus, type BusPayload } from "@/lib/transit-data";
 import { EtaSheet } from "@/components/EtaSheet";
 import { AlertBanner, type AlertItem } from "@/components/AlertBanner";
 import { lazy, Suspense } from "react";
-const BusMap = lazy(() => import("@/components/BusMap").then((m) => ({ default: m.BusMap })));
+import { BusMap } from "@/components/BusMap";
+import { checkDomainOfScale } from "recharts/types/util/ChartUtils";
+// const BusMap = lazy(() => import("@/components/BusMap").then((m) => ({ default: m.BusMap })));
 
 export const Route = createFileRoute("/route/$busNumber")({
-  loader: ({ params }) => {
+  loader: async ({ params }) => {
+    try {
+      const res = await fetch("http://localhost:8000/api/buses");
+      if (res.ok) {
+        const buses = await res.json();
+        const bus = buses.find((b: any) => b.number === params.busNumber);
+        if (bus) return { bus };
+      }
+    } catch {
+      // Ignored
+    }
+
+    // Fallback to local
     const bus = getBus(params.busNumber);
     if (!bus) throw notFound();
     return { bus };
@@ -180,10 +194,13 @@ function BusRoutePage() {
 
   const upcomingList = useMemo(() => {
     if (!payload) return [];
-    return Object.entries(payload.upcoming_etas).map(([name, eta]) => ({
-      name,
-      etaSeconds: eta,
+    // console.log("payload.upcoming_etas", payload.upcoming_etas)
+    const res = payload.upcoming_etas.map(({ stop_name, eta_seconds }) => ({
+      stop_name,
+      eta_seconds,
     }));
+    // console.log("response,", res);
+    return res;
   }, [payload]);
 
   const upcomingPolyline = useMemo<[number, number][]>(() => {
@@ -202,8 +219,8 @@ function BusRoutePage() {
 
   // Header back button
   const Header = (
-    <header className="absolute inset-x-0 top-0 z-30">
-      <div className="mx-auto max-w-3xl px-4 pt-4">
+    <header className="shrink-0 z-30 bg-background/80 backdrop-blur border-b border-border">
+      <div className="mx-auto max-w-3xl px-4 py-4">
         <div className="flex items-center gap-3">
           <Link
             to="/"
@@ -215,8 +232,8 @@ function BusRoutePage() {
           <div className="flex-1 rounded-xl border border-border bg-card/80 backdrop-blur px-3 py-2 shadow-card">
             <div className="flex items-center gap-2">
               <BusFront className="h-4 w-4 text-primary" />
-              <span className="font-mono text-xs font-bold text-primary">{bus.number}</span>
-              <span className="text-xs text-muted-foreground truncate">· {bus.name}</span>
+              <span className="font-mono text-xs font-bold text-primary">{bus?.number}</span>
+              <span className="text-xs text-muted-foreground truncate">· {bus?.name}</span>
               {payload?.isBusRunning && (
                 <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
                   <Gauge className="h-3 w-3" /> {payload.speed} km/h
@@ -238,7 +255,7 @@ function BusRoutePage() {
   // Not running screen
   if (payload && !payload.isBusRunning) {
     return (
-      <div className="relative min-h-screen bg-background">
+      <div className="flex flex-col h-screen bg-background">
         {Header}
         <main className="flex min-h-screen items-center justify-center px-6">
           <div className="max-w-sm text-center">
@@ -265,9 +282,9 @@ function BusRoutePage() {
   // Loading
   if (!payload || !animPos) {
     return (
-      <div className="relative min-h-screen bg-background">
+      <div className="flex flex-col h-screen bg-background">
         {Header}
-        <main className="flex min-h-screen items-center justify-center">
+        <main className="flex flex-1 items-center justify-center">
           <div className="flex items-center gap-3 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
             <span className="text-sm">Connecting to live feed…</span>
@@ -277,14 +294,14 @@ function BusRoutePage() {
     );
   }
 
-  const nextStopName = Object.keys(payload.upcoming_etas)[0] ?? null;
-  const nextStopEta = nextStopName ? payload.upcoming_etas[nextStopName] : null;
+  const nextStopName = payload.upcoming_etas[0].stop_name ?? null;
+  const nextStopEta = nextStopName ? payload.upcoming_etas[0].eta_seconds : null;
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-background">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
       {Header}
 
-      <div className="absolute inset-0">
+      <div className="flex-1 relative mx-4 mt-4 mb-[110px] rounded-2xl overflow-hidden border border-border shadow-card">
         {mounted ? (
           <Suspense fallback={<div className="h-full w-full bg-background" />}>
             <BusMap
