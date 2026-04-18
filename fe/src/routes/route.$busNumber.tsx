@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, BusFront, Gauge, Loader2 } from "lucide-react";
 import { connectBusSocket } from "@/lib/mock-bus-ws";
 import { STOPS, getBus, type BusPayload } from "@/lib/transit-data";
+import { ROUTE_PATH } from "@/lib/route-path";
 import { EtaSheet } from "@/components/EtaSheet";
 import { AlertBanner, type AlertItem } from "@/components/AlertBanner";
 import { lazy, Suspense } from "react";
@@ -203,18 +204,58 @@ function BusRoutePage() {
     return res;
   }, [payload]);
 
-  const upcomingPolyline = useMemo<[number, number][]>(() => {
-    if (!payload || !animPos) return [];
-    const nextName = Object.keys(payload.upcoming_etas)[0];
-    if (!nextName) return [];
-    const startIdx = STOPS.findIndex((s) => s.name === nextName);
-    if (startIdx < 0) return [];
-    const pts: [number, number][] = [[animPos.lat, animPos.lng]];
-    for (let i = 0; i < 3; i++) {
-      const s = STOPS[(startIdx + i) % STOPS.length];
-      pts.push([s.lat, s.lng]);
+  const polys = useMemo(() => {
+    if (!payload || !animPos || ROUTE_PATH.length === 0) {
+      return { full: [], upcoming: [] };
     }
-    return pts;
+    // We get the next logical stop
+    const nextName = payload.upcoming_etas[0].stop_name;
+    if (!nextName) return { full: [], upcoming: [] };
+
+    const targetStop = STOPS.find((s) => s.name === nextName);
+    if (!targetStop) return { full: [], upcoming: [] };
+
+    // 1. Find nearest index on ROUTE_PATH to the bus
+    let bestBusIdx = 0;
+    let bestBusDist = Infinity;
+    for (let i = 0; i < ROUTE_PATH.length; i++) {
+      const d = Math.pow(ROUTE_PATH[i][0] - animPos.lat, 2) + Math.pow(ROUTE_PATH[i][1] - animPos.lng, 2);
+      if (d < bestBusDist) {
+        bestBusDist = d;
+        bestBusIdx = i;
+      }
+    }
+
+    // 2. Find nearest index on ROUTE_PATH to the target Stop
+    let bestStopIdx = 0;
+    let bestStopDist = Infinity;
+    for (let i = 0; i < ROUTE_PATH.length; i++) {
+      const d = Math.pow(ROUTE_PATH[i][0] - targetStop.lat, 2) + Math.pow(ROUTE_PATH[i][1] - targetStop.lng, 2);
+      if (d < bestStopDist) {
+        bestStopDist = d;
+        bestStopIdx = i;
+      }
+    }
+
+    // 3. Highlighted upcoming polyline from bus -> targetStop
+    const upcoming: [number, number][] = [[animPos.lat, animPos.lng]];
+    let curr = bestBusIdx;
+    let safetyCounter = 0;
+    while (safetyCounter < ROUTE_PATH.length * 2) {
+      upcoming.push([ROUTE_PATH[curr][0], ROUTE_PATH[curr][1]]);
+      if (curr === bestStopIdx) break;
+      curr = (curr + 1) % ROUTE_PATH.length;
+      safetyCounter++;
+    }
+    upcoming.push([targetStop.lat, targetStop.lng]);
+
+    // 4. Full Route Polyline from bus -> end of normal terminal circuit
+    const full: [number, number][] = [[animPos.lat, animPos.lng]];
+    for (let i = bestBusIdx; i < ROUTE_PATH.length; i++) {
+      full.push([ROUTE_PATH[i][0], ROUTE_PATH[i][1]]);
+    }
+
+    return { full, upcoming };
   }, [payload, animPos]);
 
   // Header back button
@@ -307,7 +348,8 @@ function BusRoutePage() {
             <BusMap
               position={animPos}
               activeStopIndex={payload.isAtStop}
-              upcomingPolyline={upcomingPolyline}
+              upcomingPolyline={polys.upcoming}
+              fullRoutePolyline={polys.full}
             />
           </Suspense>
         ) : (

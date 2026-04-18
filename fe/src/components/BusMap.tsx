@@ -4,24 +4,26 @@ import L from "leaflet";
 import { STOPS } from "@/lib/transit-data";
 
 // Fix default marker icons (leaflet+webpack issue)
-delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
+if (typeof window !== "undefined") {
+  delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  });
 
-// Definitively fix "Map container is already initialized" for React 18 Strict Mode and HMR.
-// By intercepting L.Map initialization, we can transparently clear the stale _leaflet_id
-// left behind by React's aggressive DOM reuse before Leaflet checks for it.
-const originalInit = (L.Map.prototype as any).initialize;
-(L.Map.prototype as any).initialize = function (this: any, ...args: any[]) {
-  const container = args[0];
-  if (container && typeof container !== "string" && container._leaflet_id) {
-    container._leaflet_id = null;
-  }
-  originalInit.apply(this, args);
-};
+  // Definitively fix "Map container is already initialized" for React 18 Strict Mode and HMR.
+  // By intercepting L.Map initialization, we can transparently clear the stale _leaflet_id
+  // left behind by React's aggressive DOM reuse before Leaflet checks for it.
+  const originalInit = (L.Map.prototype as any).initialize;
+  (L.Map.prototype as any).initialize = function (this: any, ...args: any[]) {
+    const container = args[0];
+    if (container && typeof container !== "string" && container._leaflet_id) {
+      container._leaflet_id = null;
+    }
+    originalInit.apply(this, args);
+  };
+}
 
 const busIcon = L.divIcon({
   className: "",
@@ -61,18 +63,14 @@ export type BusMapProps = {
   position: { lat: number; lng: number };
   activeStopIndex: number;
   upcomingPolyline: [number, number][];
+  fullRoutePolyline: [number, number][];
 };
 
-export function BusMap({ position, activeStopIndex, upcomingPolyline }: BusMapProps) {
+export function BusMap({ position, activeStopIndex, upcomingPolyline, fullRoutePolyline }: BusMapProps) {
   const [center] = useState<[number, number]>([25.27, 82.99]);
-
+  // console.log("Polyline, ", upcomingPolyline, fullRoutePolyline)
   // The map instances are now safely managed globally via the prototype trap above,
   // preventing strict mode crashing without needing to hack DOM Refs here.
-
-  const routePolyline = useMemo<[number, number][]>(
-    () => STOPS.map((s) => [s.lat, s.lng] as [number, number]).concat([[STOPS[0].lat, STOPS[0].lng]]),
-    [],
-  );
 
   return (
     <MapContainer
@@ -88,10 +86,12 @@ export function BusMap({ position, activeStopIndex, upcomingPolyline }: BusMapPr
       />
 
       {/* Full route as faint polyline */}
-      <Polyline
-        positions={routePolyline}
-        pathOptions={{ color: "oklch(0.78 0.18 155)", weight: 3, opacity: 0.3, dashArray: "6 8" }}
-      />
+      {fullRoutePolyline.length >= 2 && (
+        <Polyline
+          positions={fullRoutePolyline}
+          pathOptions={{ color: "oklch(0.78 0.18 155)", weight: 3, opacity: 0.3, dashArray: "6 8" }}
+        />
+      )}
 
       {/* Highlighted upcoming polyline */}
       {upcomingPolyline.length >= 2 && (
