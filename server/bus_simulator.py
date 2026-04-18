@@ -95,9 +95,30 @@ PASSWORD = os.getenv("MQTT_PASSWORD")
 NORMAL_INTERVAL = 2       # seconds between GPS pings in every state
 ROW_SPACING_M   = 10      # metres between consecutive CSV rows (fixed)
 
-SPEED_MIN_KMH   = 15.0    # random speed floor
-SPEED_MAX_KMH   = 60.0    # random speed ceiling
-ACCEL_PER_TICK  = 4.0     # max speed change per tick (km/h)  ← random drift
+# ── Speed physics — per day-of-week profiles ─────────────────────────────────
+DAY_PROFILES = {
+    0: {"day": "Monday",    "speed_min": 2.5, "speed_max": 4.5, "accel": 0.25, "decel": 0.60},
+    1: {"day": "Tuesday",   "speed_min": 3.0, "speed_max": 5.0, "accel": 0.30, "decel": 0.55},
+    2: {"day": "Wednesday", "speed_min": 3.0, "speed_max": 5.0, "accel": 0.30, "decel": 0.50},
+    3: {"day": "Thursday",  "speed_min": 3.0, "speed_max": 5.0, "accel": 0.30, "decel": 0.55},
+    4: {"day": "Friday",    "speed_min": 2.0, "speed_max": 4.0, "accel": 0.20, "decel": 0.70},
+    5: {"day": "Saturday",  "speed_min": 4.0, "speed_max": 6.0, "accel": 0.40, "decel": 0.45},
+    6: {"day": "Sunday",    "speed_min": 4.5, "speed_max": 6.5, "accel": 0.50, "decel": 0.40},
+}
+
+# ── Stop behaviour ────────────────────────────────────────────────────────────
+STOP_COORDINATES = [
+    {"name": "Lanka Gate",          "lat": 25.277768, "lng": 83.002231},
+    {"name": "Stop - 1",            "lat": 25.263755, "lng": 82.997520},
+    {"name": "Hyderabad Gate",      "lat": 25.262927, "lng": 82.981793},
+    {"name": "Rajeev Nagar Colony", "lat": 25.275039, "lng": 82.984572},
+]
+STOP_DURATION    = 300     # seconds to wait at each intermediate stop (5 min)
+STOP_APPROACH_M  = 50      # metres ahead of a stop to start braking
+PROXIMITY_M      = 15      # metres — "at stop" threshold
+
+# ── Round-trip restart ────────────────────────────────────────────────────────
+RESTART_INTERVAL = 7200    # 2-hour cycle between departure times (seconds)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  STATE LABELS
@@ -191,8 +212,18 @@ class Bus:
         self.client     = client
 
         self.row_idx    = 0
-        self.distance_m = 0.0
-        self.speed_kmh  = random.uniform(SPEED_MIN_KMH, SPEED_MAX_KMH)
+        self.dist_rem      = 0.0   # sub-row remainder accumulator (metres)
+
+        # Physics — start at minimum speed
+        self.speed_ms      = 2.5 / 3.6  # Default start speed (Monday min)
+        self.speed_kmh     = 2.5
+
+        # Stop tracking
+        self.at_stop       = False
+        self.last_stop_name = None
+
+        # Round-trip timing
+        self.route_start_time = time.time()
 
         # FSM
         self.state          = NORMAL
@@ -205,29 +236,78 @@ class Bus:
         self.thread  = threading.Thread(target=self._loop, daemon=True, name=bus_id)
         self.thread.start()
 
+    # ── geometry ──────────────────────────────────────────────────────────────
+    def _dist_m(self, lat1, lng1, lat2, lng2) -> float:
+        """Flat-earth distance in metres (accurate enough for <5 km)."""
+        dlat = (lat2 - lat1) * 111320
+        dlng = (lng2 - lng1) * 111320 * math.cos(math.radians((lat1 + lat2) / 2))
+        return math.sqrt(dlat**2 + dlng**2)
+
+    def _nearest_stop(self) -> tuple:
+        """Return (distance_m, stop_dict) for the closest stop."""
+        curr = self.rows[self.row_idx % len(self.rows)]
+        best_d, best_s = float("inf"), None
+        for stop in STOP_COORDINATES:
+            d = self._dist_m(curr["lat"], curr["lng"], stop["lat"], stop["lng"])
+            if d < best_d:
+                best_d, best_s = d, stop
+        return best_d, best_s
+
     # ── physics helpers ───────────────────────────────────────────────────────
-    def _drift_speed(self):
-        """Smoothly random-walk the speed within [SPEED_MIN, SPEED_MAX]."""
-        delta = random.uniform(-ACCEL_PER_TICK, ACCEL_PER_TICK)
-        self.speed_kmh = max(SPEED_MIN_KMH, min(SPEED_MAX_KMH, self.speed_kmh + delta))
+    @staticmethod
+    def _day_profile() -> dict:
+        """Return the speed/accel profile for the current day of the week."""
+        return DAY_PROFILES[datetime.now().weekday()]
 
-    def _advance(self):
-        """Move row_idx forward based on current speed."""
-        if self.speed_kmh <= 0:
-            return
-        dist = (self.speed_kmh / 3.6) * NORMAL_INTERVAL   # metres this tick
-        step = max(1, round(dist / ROW_SPACING_M))
-        self.distance_m += step * ROW_SPACING_M
-        self.row_idx = (self.row_idx + step) % len(self.rows)
+    def _update_speed(self, dist_to_stop: float):
+        """Accelerate toward cruise or decelerate toward stop, using today's profile."""
+        profile   = self._day_profile()
+        cruise_ms = profile["speed_max"] / 3.6
+        min_ms    = profile["speed_min"] / 3.6
+        accel     = profile["accel"]
+        decel     = profile["decel"]
+        dt        = NORMAL_INTERVAL
 
-    def _point(self) -> dict:
-        r = self.rows[self.row_idx % len(self.rows)]
+        if dist_to_stop <= STOP_APPROACH_M:
+            ratio  = max(0.0, (dist_to_stop - PROXIMITY_M) / (STOP_APPROACH_M - PROXIMITY_M))
+            target = cruise_ms * ratio
+        else:
+            target = cruise_ms + random.uniform(-0.05, 0.05) * (cruise_ms - min_ms)
+            target = max(min_ms, min(cruise_ms, target))
+
+        if self.speed_ms < target:
+            self.speed_ms = min(target, self.speed_ms + accel * dt)
+        else:
+            self.speed_ms = max(0.0, max(target, self.speed_ms - decel * dt))
+        
+        self.speed_kmh = self.speed_ms * 3.6
+
+    def _advance(self) -> bool:
+        """Move row_idx forward based on current speed. Returns True if route wrapped."""
+        dist = self.speed_ms * NORMAL_INTERVAL
+        self.dist_rem   += dist
+        self.distance_m += dist
+
+        steps = int(self.dist_rem / ROW_SPACING_M)
+        self.dist_rem -= steps * ROW_SPACING_M
+
+        self.row_idx += steps
+        if self.row_idx >= len(self.rows):
+            self.row_idx = self.row_idx % len(self.rows)
+            return True        # route complete
+        return False
+
+    def _point(self, status="Running 1") -> dict:
+        r       = self.rows[self.row_idx % len(self.rows)]
+        profile = self._day_profile()
         return {
-            "bus_id":    self.bus_id,
-            "lat":       r["lat"],
-            "lng":       r["lng"],
-            "speed_kmh": random.randint(35, 45),
-            "timestamp": int(time.time()),
+            "bus_id":      self.bus_id,
+            "lat":         r["lat"],
+            "lng":         r["lng"],
+            "speed_kmh":   round(self.speed_kmh, 2),
+            "status":      status,
+            "day_of_week": profile["day"],
+            "timestamp":   int(time.time()),
         }
 
     # ── state commands (called from shell thread) ─────────────────────────────
@@ -275,7 +355,29 @@ class Bus:
                 state    = self.state
                 duration = self.state_duration
 
-            pt = self._point()
+            # ── proximity check ──────────────────────────────────────────────
+            dist_to_stop, nearest_stop = self._nearest_stop()
+            self._update_speed(dist_to_stop)
+
+            if (dist_to_stop < PROXIMITY_M
+                    and not self.at_stop
+                    and nearest_stop["name"] != self.last_stop_name):
+
+                # Arrived at stop
+                self.at_stop    = True
+                self.speed_ms   = 0.0
+                self.speed_kmh  = 0.0
+                self.last_stop_name = nearest_stop["name"]
+
+                self._info(f"🛑 {nearest_stop['name']} — waiting {STOP_DURATION}s", "r")
+                pub(self.client, self._point(status="Running 0"))
+                time.sleep(STOP_DURATION)
+
+                self.at_stop  = False
+                self._info(f"🟢 Departing {nearest_stop['name']}", "g")
+                continue  # re-evaluate without advancing position
+
+            pt = self._point(status="Running 1")
 
             if state == NORMAL:
                 ok = pub(self.client, pt)
@@ -306,9 +408,27 @@ class Bus:
                         self.state_duration= 0.0
                     self._info("→ back to NORMAL", "g")
 
-            self._drift_speed()
-            self._advance()
-            time.sleep(NORMAL_INTERVAL)
+            route_complete = self._advance()
+
+            if route_complete:
+                # ── round-trip complete: smart wait ───────────────────────────
+                next_departure = self.route_start_time + RESTART_INTERVAL
+                wait_s         = max(0.0, next_departure - time.time())
+                self.last_stop_name = None          # reset stops for next trip
+
+                if wait_s > 0:
+                    dep_str = datetime.fromtimestamp(next_departure).strftime("%H:%M:%S")
+                    self._info(
+                        f"🏁 Route complete. Next departure at {dep_str} "
+                        f"({wait_s:.0f}s away).", "b"
+                    )
+                    time.sleep(wait_s)
+                else:
+                    self._info("🏁 Route complete. Departing immediately.", "g")
+
+                self.route_start_time = time.time()   # reset clock for next trip
+            else:
+                time.sleep(NORMAL_INTERVAL)
 
         self._info("Stopped.", "c")
 
