@@ -301,7 +301,7 @@ function BusRoutePage() {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
       {Header}
 
-      <div className="flex-1 relative mx-4 mt-4 mb-[110px] rounded-2xl overflow-hidden border border-border shadow-card">
+      <div className="flex-1 relative z-0 mx-4 mt-4 mb-[110px] rounded-2xl overflow-hidden border border-border shadow-card">
         {mounted ? (
           <Suspense fallback={<div className="h-full w-full bg-background" />}>
             <BusMap
