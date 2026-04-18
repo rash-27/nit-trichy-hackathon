@@ -7,7 +7,7 @@ class BusState(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     speed: Optional[float] = None
-    isAtStop: bool = False
+    isAtStop: int = -1
     timeTillBusWaitsAtStop: Optional[int] = None # in seconds or unix timestamp based on usage
     upcoming_etas: List[Dict[str, Any]] = []
 
@@ -15,15 +15,15 @@ class StateManager:
     def __init__(self):
         self.state = BusState()
 
-    def update_location(self, lat: float, lng: float, speed: float):
+    def update_location(self, lat: float, lng: float, speed: float, isAtStop: int = -1, wait_time: Optional[int] = None):
         self.state.isBusRunning = True
         self.state.latitude = lat
         self.state.longitude = lng
         self.state.speed = speed
-        self.state.isAtStop = False
-        self.state.timeTillBusWaitsAtStop = None
+        self.state.isAtStop = isAtStop
+        self.state.timeTillBusWaitsAtStop = wait_time
 
-    def set_at_stop(self, is_at_stop: bool, wait_time: Optional[int] = None):
+    def set_at_stop(self, is_at_stop: int, wait_time: Optional[int] = None):
         self.state.isAtStop = is_at_stop
         self.state.timeTillBusWaitsAtStop = wait_time
 

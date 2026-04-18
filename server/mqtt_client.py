@@ -31,9 +31,11 @@ def process_payload(payload):
         lat = payload.get("lat")
         lng = payload.get("lng")
         speed = payload.get("speed_kmh", 0)
+        isAtStop = payload.get("isAtStop", -1)
+        wait_time = payload.get("timeTillBusWaitsAtStop")
 
         # Update global memory state
-        app_state.update_location(lat, lng, speed)
+        app_state.update_location(lat, lng, speed, isAtStop, wait_time)
 
         # ETA Calculation
         seg_idx, dist_covered = route_manager.get_current_segment_and_progress(lat, lng)

@@ -166,30 +166,15 @@ function BusRoutePage() {
         message: `The bus is waiting at ${name}, and it will start in ${mins} minute${mins > 1 ? "s" : ""}`,
       };
     }
-    // Determine moving-from / arriving-to based on proximity
-    const here = animPos ?? { lat: payload.latitude, lng: payload.longitude };
-    const sortedByDist = STOPS.map((s) => ({ s, d: distanceKm(here, s) })).sort(
-      (a, b) => a.d - b.d,
-    );
-    const nearest = sortedByDist[0];
-    if (nearest.d < 0.18) {
-      return {
-        id: `arr-${nearest.s.id}`,
-        tone: "success",
-        icon: "arriving",
-        message: `The bus is arriving to ${nearest.s.name}`,
-      };
-    }
     // Find which stop we most recently left (the upcoming etas tell us the next one)
-    const nextName = Object.keys(payload.upcoming_etas)[0];
-    const nextIdx = STOPS.findIndex((s) => s.name === nextName);
+    const nextName = payload.upcoming_etas[0].stop_name;
+    const nextIdx = STOPS.findIndex((s) => s.name.toLowerCase().replace(" ", "").replace("-", "") === nextName.toLowerCase().replace(" ", "").replace("-", ""));
     const fromIdx = nextIdx <= 0 ? STOPS.length - 1 : nextIdx - 1;
-    const fromName = STOPS[fromIdx]?.name ?? "the previous stop";
     return {
       id: `mov-${fromIdx}`,
       tone: "info",
       icon: "moving",
-      message: `The bus is moving from ${fromName}`,
+      message: `The bus is arriving to ${nextName}`,
     };
   }, [payload, stale, animPos]);
 

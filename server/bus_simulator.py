@@ -310,6 +310,14 @@ class Bus:
     def _point(self, status="Running 1") -> dict:
         r       = self.rows[self.row_idx % len(self.rows)]
         profile = self._day_profile()
+        
+        stop_id = -1
+        if self.at_stop and self.last_stop_name:
+            for i, st in enumerate(STOP_COORDINATES):
+                if st["name"] == self.last_stop_name:
+                    stop_id = i
+                    break
+
         return {
             "bus_id":      self.bus_id,
             "lat":         r["lat"],
@@ -318,6 +326,8 @@ class Bus:
             "status":      status,
             "day_of_week": profile["day"],
             "timestamp":   int(time.time()),
+            "isAtStop":    stop_id,
+            "timeTillBusWaitsAtStop": STOP_DURATION if self.at_stop else -1,
         }
 
     # ── state commands (called from shell thread) ─────────────────────────────
