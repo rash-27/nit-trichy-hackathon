@@ -80,6 +80,9 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, r2_score
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  SHARED CONFIG  (must match bus_script.py)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -299,13 +302,7 @@ def generate_dataset(segments: list, trials: int = 20) -> pd.DataFrame:
                     })
                     count += 1
 
-                    if count % 500 == 0:
-                        pct  = count / total * 100
-                        rate = count / (time.time() - t0 + 0.001)
-                        print(f"\r  Simulating... {count}/{total}  ({pct:.1f}%)  "
-                              f"{rate:.0f} sims/s", end="", flush=True)
-
-    print(f"\r  Simulating... {total}/{total}  (100%)  — done in {time.time()-t0:.1f}s")
+    print(f"  Simulated {total} trips in {time.time()-t0:.1f}s")
     return pd.DataFrame(records)
 
 
@@ -350,14 +347,6 @@ def train_model(df: pd.DataFrame, model_path: str = "eta_model.pkl"):
 
     print(f"[TRAIN] MAE:  {mae:.2f} seconds")
     print(f"[TRAIN] R²:   {r2:.4f}")
-
-    # Feature importances
-    print("\n[FEATURES]")
-    importances = sorted(zip(FEATURE_COLS, model.feature_importances_),
-                         key=lambda x: -x[1])
-    for feat, imp in importances:
-        bar = "#" * int(imp * 50)
-        print(f"  {feat:<22s} {imp:.4f}  {bar}")
 
     # Save
     joblib.dump(model, model_path)
@@ -405,6 +394,81 @@ def demo_predictions(model, segments: list):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  TESTING SIMULATION (7 Days, 10 Vehicles / Segment / Day)
+# ══════════════════════════════════════════════════════════════════════════════
+def test_simulation_accuracy(model, segments):
+    print("\n" + "=" * 65)
+    print("  SIMULATION TESTING (±5 MIN TOLERANCE)")
+    print("=" * 65)
+    
+    total_predictions = 0
+    correct_predictions = 0
+    
+    t0 = time.time()
+    
+    # 7 days
+    for day in range(7):
+        profile = DAY_PROFILES[day]
+        for seg in segments:
+            # 10 vehicles at different times
+            random_hours = random.sample(range(24), 10)
+            for hour in random_hours:
+                h_mult = get_hour_multiplier(hour)
+                
+                # Actual simulated time
+                actual_s = simulate_segment(seg["distance_m"], profile, hour)
+                
+                # Predicted time
+                features = [[
+                    seg["id"], day, hour,
+                    profile["speed_min"] * h_mult,
+                    profile["speed_max"] * h_mult,
+                    profile["accel"],
+                    profile["decel"],
+                    seg["distance_m"]
+                ]]
+                predicted_s = model.predict(features)[0]
+                
+                # Check if within +- 5 minutes (300 seconds)
+                diff_s = abs(actual_s - predicted_s)
+                if diff_s <= 300:
+                    correct_predictions += 1
+                total_predictions += 1
+                
+    accuracy = (correct_predictions / total_predictions) * 100
+    
+    print(f"  Total Vehicles Simulated : {total_predictions}")
+    print(f"  Correct Predictions      : {correct_predictions}")
+    print(f"  Accuracy (±5 mins)       : {accuracy:.2f}%")
+    print(f"  Precision (±5 mins)      : {accuracy:.2f}%")
+    print(f"  Time taken               : {time.time()-t0:.2f}s\n")
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  BATCH TRAINING (Weekly Update)
+# ══════════════════════════════════════════════════════════════════════════════
+def weekly_batch_training(existing_df, segments, trials_per_week=5):
+    """
+    Simulates a week passing, gathering new data, appending to existing dataset,
+    and retraining the model.
+    """
+    print("\n" + "=" * 65)
+    print("  WEEKLY BATCH TRAINING")
+    print("=" * 65)
+    print("[BATCH] Gathering new data for the week...")
+    new_data = generate_dataset(segments, trials=trials_per_week)
+    
+    print(f"\n[BATCH] Previous dataset size : {len(existing_df)} rows")
+    print(f"[BATCH] New data added        : {len(new_data)} rows")
+    
+    combined_df = pd.concat([existing_df, new_data], ignore_index=True)
+    print(f"[BATCH] Combined dataset size : {len(combined_df)} rows")
+    
+    print("[BATCH] Retraining model on combined data...")
+    new_model = train_model(combined_df, model_path="eta_model_updated.pkl")
+    return new_model, combined_df
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
@@ -413,6 +477,7 @@ if __name__ == "__main__":
     parser.add_argument("--trials",   default=20, type=int,   help="Trials per (segment × day × hour)")
     parser.add_argument("--out_csv",  default="eta_dataset.csv",  help="Output dataset CSV")
     parser.add_argument("--out_model",default="eta_model.pkl",    help="Output model file")
+    parser.add_argument("--simulate_weekly", action="store_true", help="Simulate weekly batch training")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -438,7 +503,18 @@ if __name__ == "__main__":
     # 5. Train
     model = train_model(df, model_path=args.out_model)
 
-    # 6. Demo
+    # 6. Test Simulation (7 days, 10 vehicles)
+    test_simulation_accuracy(model, segments)
+
+    # 7. Demo
     demo_predictions(model, segments)
+
+    # 8. Simulate Weekly Batch Training
+    if args.simulate_weekly:
+        model, df = weekly_batch_training(df, segments, trials_per_week=args.trials)
+        
+        # Test again on updated model
+        print("\n[TEST] Evaluating updated model...")
+        test_simulation_accuracy(model, segments)
 
     print("[DONE] You can now use eta_model.pkl in your backend for real-time ETA predictions.")
