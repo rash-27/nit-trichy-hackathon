@@ -39,6 +39,45 @@ def process_payload(payload):
 
         # ETA Calculation
         seg_idx, dist_covered = route_manager.get_current_segment_and_progress(lat, lng)
+
+        # DB Analytics
+        import time
+        import datetime
+        import asyncio
+        from db import insert_segment_time
+        from ml_model import DAY_PROFILES, HOUR_MULTIPLIERS
+
+        current_segment = app_state.state.current_segment_idx
+        entry_time = app_state.state.segment_entry_time
+        bus_id = payload.get("bus_id", "bus_1")
+        timestamp = payload.get("timestamp", time.time())
+
+        if current_segment != -1 and seg_idx != current_segment:
+            if entry_time > 0:
+                elapsed_s = timestamp - entry_time
+                segment_dist_m = route_manager.segments[current_segment]["total_distance_km"] * 1000
+                d = datetime.datetime.fromtimestamp(timestamp)
+                day_int = d.weekday()
+                hour_int = d.hour
+                profile = DAY_PROFILES.get(day_int, DAY_PROFILES[0])
+                hma = HOUR_MULTIPLIERS.get(hour_int, 1.0)
+                
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(insert_segment_time(
+                        timestamp, bus_id, current_segment, day_int, hour_int,
+                        profile["speed_min"] * hma, profile["speed_max"] * hma,
+                        profile["accel"], profile["decel"], segment_dist_m, elapsed_s
+                    ))
+                except Exception as e:
+                    logger.error(f"Failed starting DB task: {e}")
+
+            app_state.state.current_segment_idx = seg_idx
+            app_state.state.segment_entry_time = timestamp
+        elif current_segment == -1:
+            app_state.state.current_segment_idx = seg_idx
+            app_state.state.segment_entry_time = timestamp
+
         etas = ml_estimator.get_etas(seg_idx, dist_covered, route_manager)
         
         # Save ETAs to state for new connections

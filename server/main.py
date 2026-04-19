@@ -16,8 +16,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from db import init_db
+
 @app.on_event("startup")
 async def startup_event():
+    await init_db()
     # Start MQTT loop in thread or background loop
     loop = asyncio.get_running_loop()
     start_mqtt_client(loop)

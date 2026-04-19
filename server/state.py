@@ -10,6 +10,8 @@ class BusState(BaseModel):
     isAtStop: int = -1
     timeTillBusWaitsAtStop: Optional[int] = None # in seconds or unix timestamp based on usage
     upcoming_etas: List[Dict[str, Any]] = []
+    current_segment_idx: int = -1
+    segment_entry_time: float = 0.0
 
 class StateManager:
     def __init__(self):
