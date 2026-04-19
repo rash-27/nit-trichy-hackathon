@@ -28,8 +28,8 @@ Instead of complex, heavy Deep Learning, we utilize a lightweight Scikit-Learn `
 
 **Model Performance Improvement (Before vs. After 1 Batch Training Cycle):**
 <p align="center">
-<img width="45%" height="450" alt="after-batch-training" src="https://github.com/user-attachments/assets/929c52ff-3f05-4507-b9a2-b8b735a4bcd1" />
 <img width="45%" height="450" alt="before-batch-training" src="https://github.com/user-attachments/assets/eb7c9b07-a082-4078-94bf-895dec3ea94a" />
+<img width="45%" height="450" alt="after-batch-training" src="https://github.com/user-attachments/assets/929c52ff-3f05-4507-b9a2-b8b735a4bcd1" />
 </p>
 ---
 
