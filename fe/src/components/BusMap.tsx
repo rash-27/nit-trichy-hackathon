@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, useMap, Tooltip } from "react-leaflet";
 import L from "leaflet";
 import { STOPS } from "@/lib/transit-data";
 
@@ -102,7 +102,11 @@ export function BusMap({ position, activeStopIndex, upcomingPolyline, fullRouteP
       )}
 
       {STOPS.map((s, i) => (
-        <Marker key={s.id} position={[s.lat, s.lng]} icon={stopIcon(i === activeStopIndex)} />
+        <Marker key={s.id} position={[s.lat, s.lng]} icon={stopIcon(i === activeStopIndex)}>
+          <Tooltip direction="top" offset={[0, -10]} opacity={0.9} permanent className="bg-background/90 backdrop-blur border-border text-foreground font-semibold px-2 py-1 rounded shadow-sm text-xs">
+            {s.name}
+          </Tooltip>
+        </Marker>
       ))}
 
       {STOPS.map((s) => (
