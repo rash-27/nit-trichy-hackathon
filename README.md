@@ -28,8 +28,8 @@ Instead of complex, heavy Deep Learning, we utilize a lightweight Scikit-Learn `
 
 **Model Performance Improvement (Before vs. After 1 Batch Training Cycle):**
 <p align="center">
-<img width="45%" height="450" alt="before-batch-training" src="https://github.com/user-attachments/assets/eb7c9b07-a082-4078-94bf-895dec3ea94a" />
-<img width="45%" height="450" alt="after-batch-training" src="https://github.com/user-attachments/assets/929c52ff-3f05-4507-b9a2-b8b735a4bcd1" />
+<img width="45%" height="350" alt="before-batch-training" src="https://github.com/user-attachments/assets/eb7c9b07-a082-4078-94bf-895dec3ea94a" />
+<img width="45%" height="350" alt="after-batch-training" src="https://github.com/user-attachments/assets/929c52ff-3f05-4507-b9a2-b8b735a4bcd1" />
 </p>
 ---
 
@@ -46,8 +46,6 @@ Our architecture ensures a decoupled, linear data flow from the bus to the commu
 * **Backend & ML:** A FastAPI server that aggregates MQTT data, calculates live ETAs using the pre-trained Random Forest model, and broadcasts updates natively via WebSockets.
 * **Database:** SQLite. *(Design Note: We intentionally swapped traditional PostgreSQL for SQLite to ensure seamless, zero-config embedded integration and lightning-fast batch training data storage during the tight 36-hour hackathon constraint).*
 * **Consumer:** A React application connected via WebSockets to receive instant, fan-out updates with zero database-query overhead.
-
----
 
 ## 💻 Tech Stack
 
