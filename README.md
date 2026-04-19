@@ -6,7 +6,6 @@
 
 **Our Solution:** We built a lightweight, ultra-resilient tracking architecture that seamlessly handles network drops. It uses adaptive payloads, client-side predictive smoothing, and store-and-forward MQTT buffering to ensure the end-user never sees a broken map, even when the bus goes completely offline.
 
----
 
 ## 🛠️ Team's Approach (Core Engineering)
 
@@ -31,7 +30,6 @@ Instead of complex, heavy Deep Learning, we utilize a lightweight Scikit-Learn `
 <img width="45%" height="350" alt="before-batch-training" src="https://github.com/user-attachments/assets/eb7c9b07-a082-4078-94bf-895dec3ea94a" />
 <img width="45%" height="350" alt="after-batch-training" src="https://github.com/user-attachments/assets/929c52ff-3f05-4507-b9a2-b8b735a4bcd1" />
 </p>
----
 
 ## 🏗️ System Architecture
 
@@ -69,7 +67,6 @@ Our architecture ensures a decoupled, linear data flow from the bus to the commu
 * **Pandas**
 * **SQLite**
 
----
 
 ## 🚀 Setup Instructions
 
